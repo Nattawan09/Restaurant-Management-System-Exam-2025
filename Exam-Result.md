@@ -577,7 +577,7 @@ cd frontend && npm install && npm run dev
 
 | Service | Port ที่รันจริง | ค่า CORS_ORIGIN ที่ตั้ง | ค่า VITE_API_URL ที่ตั้ง |
 |---------|---------------|------------------------|------------------------|
-| Backend API | 3001 | http://localhost:80 | — |
+| Backend API | 3001 | http://localhost:8080 | — |
 | Frontend | 80 | — | /api |
 
 #### ผล Smoke Test — On-Premises
@@ -587,7 +587,7 @@ cd frontend && npm install && npm run dev
 | ทดสอบ | URL | ผลลัพธ์ที่คาดหวัง | ผ่าน/ไม่ผ่าน |
 |-------|-----|-----------------|-------------|
 | Backend Health Check | `http://localhost:3001/api/health` | `{"status":"ok"}` | ✅ |
-| Frontend Login | `http://localhost:80` | หน้า Login แสดงผลสำเร็จ | ✅ |
+| Frontend Login | `http://localhost:8080` | หน้า Login แสดงผลสำเร็จ | ✅ |
 
 #### หลักฐาน On-Premises
 
@@ -629,7 +629,7 @@ cd frontend && npm install && npm run dev
 |----------|---------|--------------|
 | `DATABASE_URL` | backend | postgresql://postgres:postgres@db:5432/rms_db |
 | `JWT_SECRET` | backend | (ตั้งค่าแล้ว — ไม่ระบุค่าจริงเพื่อความปลอดภัย) |
-| `CORS_ORIGIN` | backend | http://localhost:80 |
+| `CORS_ORIGIN` | backend | http://localhost:8080 |
 | `NODE_ENV` | backend | production |
 | `VITE_API_URL` | frontend | /api |
 
@@ -677,7 +677,7 @@ docker compose up --build
 | ทดสอบ | URL | ผลลัพธ์ที่คาดหวัง | ผ่าน/ไม่ผ่าน |
 |-------|-----|-----------------|-------------|
 | Backend Health Check | `http://localhost:3001/api/health` | `{"status":"ok"}` | ✅ |
-| Frontend | `http://localhost:80` | หน้า Login แสดงผลสำเร็จ | ✅ |
+| Frontend | `http://localhost:8080` | หน้า Login แสดงผลสำเร็จ | ✅ |
 
 #### หลักฐาน Staging
 
