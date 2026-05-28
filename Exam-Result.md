@@ -43,8 +43,8 @@
 | Service | URL (กรอก URL จริง) | สถานะ |
 |---------|---------------------|-------|
 | Frontend (Vercel) | https://rms-frontend-68030085.vercel.app | ✅ |
-| Backend (Render) | https://rms-backend-68030085.onrender.com | ✅ |
-| API Health Check (`/api/health`) | https://rms-backend-68030085.onrender.com/api/health | ✅ |
+| Backend (Render) | https://restaurant-management-system-exam-2025-ocv5.onrender.com | ✅ |
+| API Health Check (`/api/health`) | https://restaurant-management-system-exam-2025-ocv5.onrender.com/api/health | ✅ |
 | Database (Neon.tech connection string) | postgresql://[user]:[pass]@[host].neon.tech/rms_db | ✅ |
 
 ---
@@ -737,7 +737,7 @@ Build Command:  npm run build
 | `JWT_SECRET` | Backend (Render) | (ตั้งค่าแล้ว — ไม่ระบุ) |
 | `CORS_ORIGIN` | Backend (Render) | `https://rms-frontend-68030085.vercel.app` |
 | `NODE_ENV` | Backend (Render) | `production` |
-| `VITE_API_URL` | Frontend (Vercel) | `https://rms-backend-68030085.onrender.com` |
+| `VITE_API_URL` | Frontend (Vercel) | `https://restaurant-management-system-exam-2025-ocv5.onrender.com` |
 
 ---
 

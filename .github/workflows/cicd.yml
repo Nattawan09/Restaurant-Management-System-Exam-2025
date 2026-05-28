@@ -126,7 +126,7 @@ jobs:
         working-directory: frontend
         run: npm run build
         env:
-          VITE_API_URL: https://rms-backend-68030085.onrender.com/api
+          VITE_API_URL: https://restaurant-management-system-exam-2025-ocv5.onrender.com/api
 
   # ────────────────────────────────────────────────────────────────────
   # Job 2 — Deploy backend to Render (only main)
@@ -152,7 +152,7 @@ jobs:
         run: |
           URL="$RENDER_BACKEND_URL"
           if [ -z "$URL" ]; then
-            URL="https://rms-backend-68030085.onrender.com"
+            URL="https://restaurant-management-system-exam-2025-ocv5.onrender.com"
           fi
           echo "Waiting for $URL/api/health to be healthy..."
           for i in {1..40}; do
