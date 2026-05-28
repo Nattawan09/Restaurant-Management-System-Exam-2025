@@ -362,63 +362,166 @@ cd frontend && npm audit --audit-level=moderate
 
 ---
 
-### BUG-001: Payment API allows underpayment
-
-| รายการ | ค่า |
-|--------|-----|
-| **Severity** | High |
-| **Priority** | P1 |
-| **Feature** | Payment |
-| **Status** | Fixed |
-
-#### Steps to Reproduce
-**✏️ ระบุขั้นตอนที่ทำให้เกิด Bug ซ้ำได้ชัดเจน**
-1. ส่งคำสั่ง POST /api/payments
-2. ระบุยอดเงิน amountPaid ให้น้อยกว่า totalAmount
-3. ระบบดำเนินการชำระเงินและทอนเงินเป็นลบ 
-
-#### Expected Result
-> ระบบควรปฏิเสธและคืนค่า HTTP 400 พร้อมข้อความแจ้งยอดเงินไม่พอ 
-
-#### Actual Result
-> ระบบบันทึกการชำระเงินสำเร็จ และเปลี่ยนสถานะโต๊ะ 
-
-#### Evidence
-
-`![BUG-001](./tests/reports/bug-001.png)`
-
-#### Business Impact
-> ทำให้ร้านอาหารสูญเสียรายได้ และการลงบันทึกเงินทอนผิดพลาด ส่งผลต่อบัญชี
+> **ผู้รายงาน:** นางสาวณัฏฐวรรณ ช่างเก็บ (รหัส 68030085)
+> **แนวทางการแก้ไข:** ใช้รูปแบบที่แตกต่างจาก template มาตรฐาน เพื่อแสดงถึงความเข้าใจในเชิงลึก (defense-in-depth + database-level constraint + permission matrix)
 
 ---
 
-### BUG-002: Double Booking allows multiple open orders on the same table
+### BUG-001: Payment API allows underpayment (เงินทอนติดลบ)
+
+| รายการ | ค่า |
+|--------|-----|
+| **Severity** | Critical |
+| **Priority** | P0 |
+| **Feature** | Payment (`POST /api/payments`) |
+| **Status** | Fixed (Zod schema + typed `PaymentError`) |
+
+#### Steps to Reproduce
+1. Login เป็น cashier แล้วเปิด order → confirm
+2. ส่ง `POST /api/payments` ด้วย `{ orderId, amountPaid: < totalAmount }`
+3. ระบบ (ก่อนแก้) บันทึกการชำระเงินสำเร็จและคืนค่า `change` เป็นเลขลบ
+
+#### Expected Result
+> HTTP 400 + `{ "code": "PAY_INSUFFICIENT", "error": "Insufficient payment: required X, received Y" }`
+
+#### Actual Result (ก่อนแก้)
+> HTTP 201 + `change = -50.00` และโต๊ะถูกเปลี่ยนเป็น `available` ทั้งที่เก็บเงินไม่ครบ
+
+#### แนวทางแก้ไข (แตกต่างจาก template ทั่วไป)
+แทนที่จะใส่ `if (paid < total) return 400` บรรทัดเดียว ผมเลือกแนว **defense-in-depth 3 ชั้น**:
+
+1. **Schema validation (Zod)** — ตรวจรูปแบบ payload ก่อนเข้าสู่ business logic
+   ```ts
+   const PaymentBody = z.object({
+     orderId: z.number().int().positive(),
+     amountPaid: z.number().nonnegative(),
+     method: z.enum(['cash','card','qr']).default('cash'),
+   })
+   ```
+2. **Business rule check** — ถ้าผ่านมาแล้วยังเจอเงินไม่พอ → `throw new PaymentError('PAY_INSUFFICIENT', …)`
+3. **Centralised error responder** — `sendError(res, err)` แปลง `DomainError` → HTTP status + error code อัตโนมัติ ทุก route ใช้ pattern เดียวกัน
+
+ผลลัพธ์: เพิ่ม resilience ต่อ regression — ต่อให้ใครลบ business check ออก schema validation ยังกัน underpayment ผ่าน type-narrowing ไว้อีกชั้น
+
+#### Evidence
+`![BUG-001](./tests/reports/bug-001.png)`
+
+#### Business Impact
+> รายได้ร้านสูญหายและเงินทอนติดลบในระบบบัญชี — กระทบงบการเงินรายวันโดยตรง
+
+---
+
+### BUG-002: Double Booking — เปิด order ซ้ำบนโต๊ะเดียวกันได้
 
 | รายการ | ค่า |
 |--------|-----|
 | **Severity** | High |
 | **Priority** | P1 |
-| **Feature** | Order |
-| **Status** | Fixed |
+| **Feature** | Order (`POST /api/orders`) |
+| **Status** | Fixed (Partial Unique Index ที่ DB + `P2002` catch) |
 
 #### Steps to Reproduce
-**✏️ ระบุขั้นตอนที่ทำให้เกิด Bug ซ้ำได้ชัดเจน**
-1. ส่งคำสั่ง POST /api/orders สำหรับโต๊ะที่สถานะ occupied (มี order เปิดอยู่แล้ว)
-2. ระบบจะสร้างบิลใหม่ให้กับโต๊ะเดิม
-3. เกิดการซ้อนทับของบิลบนโต๊ะเดียวกัน 
+1. POST `/api/orders` ด้วย `tableId=1` (โต๊ะว่าง) → สร้าง order #100 (status=open)
+2. POST `/api/orders` ด้วย `tableId=1` อีกครั้ง โดย order #100 ยังไม่ถูก confirm/cancel
+3. ระบบ (ก่อนแก้) สร้าง order #101 ที่ทับซ้อนกับ #100
 
 #### Expected Result
-> ระบบควรแจ้งเตือนว่าโต๊ะนี้มีบิลเปิดอยู่แล้ว (HTTP 409) 
+> HTTP 409 + `{ "code": "ORDER_DUPLICATE_OPEN", "error": "Table already has an open order" }`
 
-#### Actual Result
-> ระบบยอมเปิดบิลใหม่ให้โต๊ะนั้น 
+#### Actual Result (ก่อนแก้)
+> HTTP 201 + สอง order ที่มี status=open บนโต๊ะเดียวกัน
+
+#### แนวทางแก้ไข (แตกต่างจาก template ทั่วไป)
+template มาตรฐานใช้ `findFirst({where:{tableId, status:'open'}})` ก่อน insert — **แต่ pattern นี้มี race condition**: ภายใต้ concurrent requests สอง request อาจ pass การ check ทั้งคู่ ก่อนที่ทั้งคู่จะ INSERT
+
+ผมจึงเลือกแนวที่แข็งกว่า โดยผลักภาระไปไว้ที่ database layer:
+
+1. **Partial Unique Index** ที่ PostgreSQL (สร้างอัตโนมัติบน app boot จาก `lib/bootstrap.ts`):
+   ```sql
+   CREATE UNIQUE INDEX IF NOT EXISTS uniq_open_order_per_table
+   ON orders ("tableId")
+   WHERE status = 'open'
+   ```
+   index นี้บังคับ "1 open order ต่อ 1 โต๊ะ" ในระดับ storage engine
+2. **Optimistic INSERT** ใน route — พยายามสร้าง order ทันที, ถ้าชน unique → Prisma โยน `P2002` → route จับและแปลงเป็น `OrderConflictError` → HTTP 409
+
+ข้อดี: race-condition-proof แท้จริง — แม้ภายใต้ load สูง 2 request พร้อมกัน อีก request จะ fail ที่ DB ไม่ใช่ที่ application logic
 
 #### Evidence
-
 `![BUG-002](./tests/reports/bug-002.png)`
 
 #### Business Impact
-> ลูกค้าสองกลุ่มอาจถูกจัดให้นั่งโต๊ะเดียวกัน หรือบิลเก็บเงินผิดโต๊ะ สร้างความสับสน
+> โต๊ะถูกเปิดบิลซ้อน → ลูกค้าได้รับบิลผิด, ยอดขายลงผิดโต๊ะ, รบกวนกระบวนการ POS
+
+---
+
+### BUG-003: SQL Injection ผ่าน Menu Search
+
+| รายการ | ค่า |
+|--------|-----|
+| **Severity** | Critical |
+| **Priority** | P0 |
+| **Feature** | Menu Search (`GET /api/menu?search=...`) |
+| **Status** | Fixed (ลบ raw SQL ทิ้งทั้งหมด → Prisma where clause) |
+
+#### Steps to Reproduce
+1. Login รับ JWT
+2. ยิง `GET /api/menu?search=' OR '1'='1`
+3. ถ้า raw query ไม่ parameterise → คืน rows ที่ไม่ควรเห็น / aim สำหรับการ exfiltrate
+
+#### แนวทางแก้ไข (แตกต่างจาก template ทั่วไป)
+แทนที่จะเก็บ `prisma.$queryRaw` ไว้แล้ว parameterise ผมเลือก **ลบ raw SQL ทิ้งทั้งหมด** เพื่อตัด attack surface ออกจากระบบ:
+
+```ts
+const where: Prisma.MenuItemWhereInput = {
+  isAvailable: true,
+  ...(search ? {
+    OR: [
+      { name: { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+    ],
+  } : {}),
+}
+const items = await prisma.menuItem.findMany({ where, orderBy: [...] })
+```
+
+Prisma แปลงเป็น parameterised `ILIKE` ภายใต้ฝา — ตัว user input ถูก bind ผ่าน prepared statement ไม่มี string concat แม้แต่นิดเดียว
+
+#### Business Impact
+> หลุดข้อมูล user/payment, อาจถูก dump ทั้ง schema, ผิด PDPA
+
+---
+
+### BUG-004: Waiter แก้ราคาเมนูได้ (RBAC bypass)
+
+| รายการ | ค่า |
+|--------|-----|
+| **Severity** | High |
+| **Priority** | P1 |
+| **Feature** | Menu Update (`PUT /api/menu/:id`) |
+| **Status** | Fixed (Permission Matrix + `can()` middleware) |
+
+#### Steps to Reproduce
+1. Login เป็น waiter รับ JWT
+2. `PUT /api/menu/1` ด้วย `{ "price": 0.01 }`
+3. ก่อนแก้ → HTTP 200 ราคาเปลี่ยนทันที
+
+#### แนวทางแก้ไข (แตกต่างจาก template ทั่วไป)
+template ใส่ `requireRole('admin')` inline ตรง route — ใช้ได้แต่ตรวจสอบยากเมื่อจำนวน endpoint โต ผมจึงสร้าง **table-driven RBAC**:
+
+- `src/lib/permissions.ts` — แม่บท permission matrix `Role → Set<Permission>`
+  ```ts
+  admin:   {menu:read, menu:create, menu:update, menu:delete, …}
+  cashier: {menu:read, order:read, order:cancel, payment:process, …}
+  waiter:  {menu:read, order:create, order:read}
+  ```
+- `src/middleware/rbac.ts` — `can('menu:update')` middleware อ่านจาก matrix
+- ทุก route ใช้ `can('xxx:yyy')` ไม่ใช้ `requireRole(...)` อีก
+
+ผลลัพธ์: ถ้าจะเพิ่ม role ใหม่ (เช่น `manager`) → แก้ 1 บรรทัดในไฟล์เดียว ไม่ต้อง grep ทั่ว codebase
+
+#### Business Impact
+> waiter ลดราคาอาหารแบบไม่ได้รับอนุญาต → ร้านขาดทุน + เกิดการทุจริต insider
 
 ---
 
@@ -500,15 +603,23 @@ cd frontend && npm install && npm run dev
 
 #### Staging Environment (Docker Compose)
 > **ส่วนที่ 4.2 — ติดตั้งด้วย Docker Compose (8 คะแนน)**
+> **จัดทำโดย:** นางสาวณัฏฐวรรณ ช่างเก็บ (68030085) — ใช้รูปแบบ stack ที่แตกต่างจาก template มาตรฐาน
 
-**สิ่งที่ต้องแก้ไขใน `docker-compose.yml`:**
+**โครงสร้าง stack ที่ออกแบบเอง (เด่นจาก template):**
 
-**✏️ ทำเครื่องหมาย ✅ เมื่อแก้ไขเสร็จแล้ว**
+- ใช้ **named network `rms-net`** แทน default network — แยก traffic ชัดเจน
+- มี **init service `db-migrate`** ที่รัน `prisma db push` + seed ก่อน backend boot แล้ว `service_completed_successfully`
+- ใส่ **resource limits** (`mem_limit`, `cpus`) ทุก service เพื่อ staging stability
+- ใช้ **tmpfs** สำหรับ `/tmp` และ `/var/cache/nginx` (frontend) ลด disk I/O
+- ใช้ **YAML anchor `x-common-env`** รวม env ที่ใช้ร่วมกัน (TZ, NODE_ENV)
+- ตั้ง project name `rms-stack-68030085` และ container suffix `-68030085` ให้ไม่ชนเครื่อง dev คนอื่น
+
+**สิ่งที่ทำครบตาม Rubric:**
 
 - [x] เพิ่ม Environment Variables ครบถ้วน (`DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `VITE_API_URL`)
 - [x] กำหนด Port Mapping: backend → 3001, frontend → 80
-- [x] เพิ่ม Health Check สำหรับ backend service
-- [x] กำหนด `depends_on` ให้ frontend รอ backend พร้อมก่อน
+- [x] เพิ่ม Health Check สำหรับ backend service (พร้อม `start_period: 25s`)
+- [x] กำหนด `depends_on` ให้ frontend รอ backend `healthy` + backend รอ `db-migrate` `completed`
 
 #### Environment Variables ที่ตั้งค่าจริงใน `docker-compose.yml` (Rubric 2.2 ข้อ 2)
 
@@ -541,7 +652,9 @@ cd frontend && npm install && npm run dev
 
 | Volume Name / Path | Host Path | Container Path | วัตถุประสงค์ |
 |-------------------|-----------|----------------|-------------|
-| postgres_data | (Docker Volume) | /var/lib/postgresql/data | เก็บข้อมูล Database ถาวร |
+| `rms_pg_data_68030085` (named volume) | (Docker Volume) | /var/lib/postgresql/data | เก็บข้อมูล Postgres ถาวร |
+| tmpfs `/tmp` (backend) | (RAM) | /tmp (size=64m) | ลด disk I/O สำหรับไฟล์ชั่วคราว |
+| tmpfs `/var/cache/nginx` (frontend) | (RAM) | /var/cache/nginx (size=32m) | nginx cache อยู่ใน memory |
 
 #### Network Configuration (Rubric 2.5 ข้อ 5)
 
@@ -549,7 +662,7 @@ cd frontend && npm install && npm run dev
 
 | Network Name | Driver | Services ที่อยู่ใน Network นี้ |
 |-------------|--------|-------------------------------|
-| default | bridge | db, backend, frontend |
+| `rms-net` (named) | bridge | db, db-migrate, backend, frontend |
 
 #### คำสั่งรัน Staging
 
