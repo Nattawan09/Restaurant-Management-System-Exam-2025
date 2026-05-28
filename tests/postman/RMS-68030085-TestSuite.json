@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "RMS-TestSuite-v2",
-    "_postman_id": "rms-v2-exam-2024",
-    "description": "Restaurant Management System v2 — TypeScript + Prisma API Test Collection",
+    "name": "RMS-Nattawan-68030085-E2E",
+    "_postman_id": "rms-nattawan-68030085-2026",
+    "description": "Restaurant Management System v2 — E2E Test Suite by Nattawan (68030085). Covers Auth, Menu (incl. SQL injection probe), Order (incl. double-booking 409), Payment (incl. underpayment 400), and RBAC matrix checks.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
